@@ -1,0 +1,27 @@
+# Secretos y credenciales
+*.secret
+*.key
+*.pem
+*.env
+.env.*
+secrets/
+*.token
+
+# Archivos locales / específicos de máquina
+*.local
+*.local.*
+*.bak
+*.orig
+
+# Cachés y temporales
+*.log
+*.tmp
+*.swp
+*~
+.DS_Store
+.cache/
+
+# Estado de apps (no versionar)
+*.db
+*.sqlite
+*.sqlite3
