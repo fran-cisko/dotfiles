@@ -6,7 +6,13 @@ Configuración personal de la máquina, versionada con git y enlazada con GNU St
 
 | Paquete | Se enlaza a | Qué incluye |
 |---|---|---|
-| `bash` | `~/.bashrc` | Shell, PATH, alias |
+| `bash` | `~/.bashrc`, `~/.profile`, `~/.bash_profile`, `~/.bash_logout` | Shell, PATH, alias |
+| `git` | `~/.gitconfig` | Identidad y credential helper de `gh` |
+| `gtk` | `~/.config/gtk-3.0/`, `~/.config/gtk-4.0/` | Tema, fuentes y decoración |
+| `fontconfig` | `~/.config/fontconfig/fonts.conf` | Reglas de fuentes |
+| `autostart` | `~/.config/autostart/` | Apps al iniciar sesión |
+| `systemd` | `~/.config/systemd/user/` | Servicios de usuario |
+| `vscode` | `~/.config/Code/User/settings.json` | Ajustes del editor |
 | `scripts` | `~/.local/bin/` | Utilidades de terminal |
 
 `bootstrap/` no se enlaza: son scripts de instalación de un solo uso.

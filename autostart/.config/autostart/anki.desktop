@@ -1,0 +1,15 @@
+[Desktop Entry]
+Categories=Education;Languages;KDE;Qt;
+Comment=An intelligent spaced-repetition memory training program
+Exec=anki %f
+GenericName=Flashcards
+Icon=anki
+MimeType=application/x-colpkg;application/x-apkg;application/x-anki;application/x-ankiaddon;application/vnd.anki;
+Name=Anki
+SingleMainWindow=true
+StartupWMClass=anki
+Terminal=false
+TryExec=anki
+Type=Application
+Version=1.0
+X-GNOME-SingleWindow=true

@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Hex
+X-XDP-Autostart=anomaly.hex
+Exec=/usr/bin/hex start

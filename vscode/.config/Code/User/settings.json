@@ -1,0 +1,12 @@
+
+
+{
+  "workbench.colorTheme": "Visual Studio Dark",
+  "liveSassCompile.settings.formats": [
+    {
+      "format": "expanded",
+      "extensionName": ".css",
+      "savePath": "~/../css"
+    }
+  ]
+}

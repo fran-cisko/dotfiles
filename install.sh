@@ -9,7 +9,7 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DOTFILES_DIR"
 
-PACKAGES=(bash scripts)
+PACKAGES=(bash git gtk fontconfig autostart systemd vscode scripts)
 DRY_RUN=0
 
 for arg in "$@"; do

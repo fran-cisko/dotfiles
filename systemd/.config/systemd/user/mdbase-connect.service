@@ -1,0 +1,18 @@
+[Unit]
+Description=mdbase connect daemon
+Documentation=https://mdbase.dev
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart="%h/.local/share/connect/runtime/mdbase" --state-dir "%h/.local/share/connect" connect daemon run
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target
