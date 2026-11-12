@@ -10,6 +10,7 @@ Configuración personal de la máquina, versionada con git y enlazada con GNU St
 | `scripts` | `~/.local/bin/` | Utilidades de terminal |
 
 `bootstrap/` no se enlaza: son scripts de instalación de un solo uso.
+`templates/` tampoco: son plantillas que se copian al empezar un script nuevo.
 
 ## Instalación en una máquina nueva
 
@@ -31,6 +32,21 @@ sudo dnf install stow        # Nobara/Fedora
 | `obsidian-sync` | Abre Obsidian y sincroniza la bóveda con rclone al cerrar |
 | `paste-handy` | Pega texto en Wayland con `wl-copy` + `ydotool` |
 | `oracle-apply` | Reintenta el apply de un stack de Oracle hasta tener capacidad |
+
+## Plantillas
+
+| Plantilla | Para qué |
+|---|---|
+| `templates/bash/script.sh` | Utilidades de terminal en Bash |
+| `templates/python-cli/cli.py` | CLIs en Python (PEP 723, ejecutables con `uv`) |
+
+```bash
+cp ~/dotfiles/templates/bash/script.sh ~/.local/bin/mi-script
+cp ~/dotfiles/templates/python-cli/cli.py ./mi-cli.py
+```
+
+Incluyen `--help`, validación de argumentos y códigos de salida. No se enlazan
+con Stow.
 
 ## Bootstrap
 

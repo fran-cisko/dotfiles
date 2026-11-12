@@ -10,9 +10,9 @@ fi
 # --- RUTAS DE EJECUCIÓN (PATH) ---
 # ~/.local/bin: scripts de dotfiles (Stow) y binarios de usuario.
 # ~/bin: binarios propios.
-# Scripts_sh: solo los scripts que viven dentro de la bóveda.
+# scripts/vault-bin: solo los scripts que viven dentro de la bóveda.
 
-export PATH="$PATH:$HOME/.local/bin:$HOME/bin:$HOME/Documents/My_Obsidian_Vault/350_Automatizations/Scripts_sh"
+export PATH="$PATH:$HOME/.local/bin:$HOME/bin:$HOME/Documents/My_Obsidian_Vault/350_Automatizations/scripts/vault-bin"
 
 # Uncomment the following line if you don't like systemctl's auto-paging feature:
 # export SYSTEMD_PAGER=
