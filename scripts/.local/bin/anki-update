@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+#
+# anki-update — actualiza Anki (instalación por usuario, sin sudo)
+# -----------------------------------------------------------------------------
+# Anki en Linux no se auto-actualiza: su botón "Check for Updates" solo descarga
+# el .tar.zst a ~/Downloads. Este script toma ese archivo y lo instala en
+# ~/.local, de forma que:
+#   • no hace falta contraseña (sudo) nunca más,
+#   • no toca /usr/local ni el sistema,
+#   • la versión anterior se sustituye automáticamente.
+#
+# Uso:
+#   anki-update                          # usa el .tar.zst más reciente de ~/Downloads
+#   anki-update /ruta/a/anki-XX.YY.tar.zst
+#   anki-update --help
+#
+# Requisitos (ya presentes en Nobara): bash, zstd, tar.
+#
+# Seguridad:
+#   • Este script NO descarga nada por sí mismo. Tú descargas el .tar.zst desde
+#     https://apps.ankiweb.net/#download (o GitHub) y lo verificas antes.
+#   • Verifica siempre el SHA256 contra:
+#     https://github.com/ankitects/anki/releases  (campo "digest" del asset)
+#     Ejemplo: sha256sum ~/Downloads/anki-*.tar.zst
+#   • Solo ejecuta install.sh que viene dentro del tarball oficial.
+#
+# -----------------------------------------------------------------------------
+
+set -euo pipefail
+
+PREFIX="${HOME}/.local"
+DOWNLOADS="${HOME}/Downloads"
+ARCH="$(uname -m)"     # x86_64 o aarch64, detectado automáticamente
+
+# ---------- ayuda ----------
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    cat <<EOF
+anki-update — actualiza Anki en ~/.local (sin sudo)
+
+Uso:
+  anki-update                       usa el tarball más reciente en ~/Downloads
+  anki-update RUTA.tar.zst          usa el archivo indicado
+  anki-update -h | --help           muestra esta ayuda
+
+Pasos que hace:
+  1. Localiza el .tar.zst (argumento o el más reciente por fecha en ~/Downloads)
+  2. Lo extrae en un directorio temporal (limpiado al terminar)
+  3. Ejecuta install.sh con PREFIX=\$HOME/.local (sustituye la versión anterior)
+  4. Si Anki estaba abierto, lo cierra y reabre con la nueva versión
+  5. Muestra la versión instalada
+
+No descarga nada ni usa sudo. Verifica el SHA256 del tarball antes de ejecutar.
+EOF
+    exit 0
+fi
+
+# ---------- parsear argumentos (orden libre) ----------
+SHA256_EXPECTED=""
+TAR=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            cat <<EOF
+anki-update — actualiza Anki en ~/.local (sin sudo)
+
+Uso:
+  anki-update [--sha256 HASH] [RUTA.tar.zst]
+  anki-update -h | --help
+
+Opciones:
+  --sha256 HASH   verifica el SHA256 del tarball antes de instalar (recomendado)
+
+Ejemplos:
+  anki-update
+  anki-update ~/Downloads/anki-26.09.4-linux-x86_64.tar.zst
+  anki-update --sha256 1f4a6bdffcfbfc75dc5ef632aa0e44b87bdf7615679d40be8bb8db44efc06e9a \\
+              ~/Downloads/anki-26.09.4-linux-x86_64.tar.zst
+
+Pasos que hace:
+  1. Localiza el .tar.zst (argumento o el más reciente por fecha en ~/Downloads)
+  2. (opcional) Verifica su SHA256
+  3. Lo extrae en un directorio temporal (limpiado al terminar)
+  4. Ejecuta install.sh con PREFIX=\$HOME/.local (sustituye la versión anterior)
+  5. Si Anki estaba abierto, lo cierra y reabre con la nueva versión
+  6. Muestra la versión instalada
+
+No descarga nada ni usa sudo.
+EOF
+            exit 0
+            ;;
+        --sha256)
+            if [[ $# -lt 2 ]]; then
+                echo "ERROR: --sha256 requiere un hash."; exit 1
+            fi
+            SHA256_EXPECTED="$2"; shift 2
+            ;;
+        --sha256=*)
+            SHA256_EXPECTED="${1#*=}"; shift
+            ;;
+        *)
+            if [[ -n "$TAR" ]]; then
+                echo "ERROR: argumento inesperado: $1"; exit 1
+            fi
+            TAR="$1"; shift
+            ;;
+    esac
+done
+
+# ---------- localizar tarball si no se dio ----------
+if [[ -z "$TAR" ]]; then
+    mapfile -t CANDIDATES < <(ls -t "${DOWNLOADS}"/anki-*-linux-"${ARCH}".tar.zst 2>/dev/null || true)
+
+    if [[ ${#CANDIDATES[@]} -eq 0 ]]; then
+        echo "ERROR: no se encontró ningún tarball de Anki en ${DOWNLOADS}."
+        echo
+        echo "Descárgalo desde https://apps.ankiweb.net/#download y vuelve a ejecutar:"
+        echo "  anki-update --sha256 <HASH> ~/Downloads/anki-26.09.4-linux-x86_64.tar.zst"
+        exit 1
+    fi
+
+    if [[ ${#CANDIDATES[@]} -gt 1 ]]; then
+        echo "AVISO: hay ${#CANDIDATES[@]} tarballs en ${DOWNLOADS}:"
+        for c in "${CANDIDATES[@]}"; do echo "  - $c"; done
+        echo
+        echo "Para evitar instalar una versión antigua por error, indica el archivo:"
+        echo "  anki-update ~/Downloads/anki-26.09.4-linux-x86_64.tar.zst"
+        exit 1
+    fi
+
+    TAR="${CANDIDATES[0]}"
+fi
+
+if [[ ! -f "$TAR" ]]; then
+    echo "ERROR: no existe el archivo: $TAR"
+    exit 1
+fi
+
+echo "==> Actualizando Anki desde: $TAR"
+
+# ---------- verificar SHA256 (si se proporcionó) ----------
+if [[ -n "$SHA256_EXPECTED" ]]; then
+    echo "==> Verificando SHA256..."
+    ACTUAL=$(sha256sum "$TAR" | awk '{print $1}')
+    if [[ "$ACTUAL" != "$SHA256_EXPECTED" ]]; then
+        echo "ERROR: el SHA256 no coincide. No se instala nada."
+        echo "  esperado: $SHA256_EXPECTED"
+        echo "  actual:   $ACTUAL"
+        exit 1
+    fi
+    echo "    OK: $ACTUAL"
+fi
+
+# ---------- extraer ----------
+WORKDIR=$(mktemp -d /tmp/anki-update.XXXXXX)
+# Limpieza garantizada al salir, incluso si algo falla.
+trap 'rm -rf "$WORKDIR"' EXIT
+
+echo "==> Extrayendo en $WORKDIR ..."
+zstd -dc "$TAR" | tar -xf - -C "$WORKDIR"
+
+# Buscar install.sh en cualquier nivel (versiones antiguas usan anki-linux/).
+INSTALL_SH=$(find "$WORKDIR" -type f -name "install.sh" | head -n 1)
+if [[ -z "${INSTALL_SH:-}" ]]; then
+    echo "ERROR: el tarball no contiene install.sh. ¿Es un .tar.zst oficial de Anki?"
+    exit 1
+fi
+EXTRACTED=$(dirname "$INSTALL_SH")
+
+# ---------- instalar (sin sudo) ----------
+cd "$EXTRACTED"
+echo "==> Instalando en $PREFIX (sin contraseña) ..."
+PREFIX="$PREFIX" bash ./install.sh
+
+# ---------- reiniciar Anki si estaba abierto ----------
+# (el binario en memoria es el viejo hasta que se reinicie)
+if pgrep -x anki >/dev/null 2>&1; then
+    echo "==> Anki estaba abierto: cerrándolo para aplicar la nueva versión..."
+    pkill -TERM -x anki 2>/dev/null || true
+    for _ in $(seq 1 20); do
+        pgrep -x anki >/dev/null 2>&1 || break
+        sleep 1
+    done
+    echo "==> Reabriendo Anki..."
+    nohup anki >/dev/null 2>&1 &
+fi
+
+echo
+echo "==> Listo. Versión instalada:"
+anki --version 2>&1 | tail -n 1

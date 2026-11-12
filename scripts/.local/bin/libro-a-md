@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "docling",
+# ]
+# ///
+"""Convierte un PDF a Markdown con frontmatter para Obsidian.
+
+Uso:
+    uv run libro-a-md libro.pdf ~/Documents/My_Obsidian_Vault/300_RECURSOS
+    libro-a-md --title "Mi libro" --tags "libro, referencia" libro.pdf destino
+"""
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+
+def generar_frontmatter(titulo: str, tags: str) -> str:
+    fecha = time.strftime("%Y-%m-%d")
+    return f"""---
+title: "{titulo}"
+date_processed: {fecha}
+tags: [{tags}]
+fuente: PDF Original
+---
+
+# {titulo}
+
+"""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Convierte un PDF a Markdown listo para Obsidian (Docling).",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument("input_pdf", help="Ruta al PDF original.")
+    parser.add_argument("obsidian_vault", help="Carpeta destino dentro de la bóveda.")
+    parser.add_argument("--title", default=None, help="Título (por defecto: nombre del PDF).")
+    parser.add_argument("--tags", default="", help="Tags separados por coma (ej. 'libro, referencia').")
+    parser.add_argument("--ocr", action="store_true", help="Activa OCR (más lento).")
+    args = parser.parse_args()
+
+    try:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+    except ImportError:
+        print("❌ Falta docling. Opciones:", file=sys.stderr)
+        print("   uv run libro-a-md ...        (recomendado, usa PEP 723)", file=sys.stderr)
+        print("   pip install --user docling", file=sys.stderr)
+        return 1
+
+    input_path = Path(args.input_pdf).expanduser().resolve()
+    vault_path = Path(args.obsidian_vault).expanduser().resolve()
+
+    if not input_path.is_file():
+        print(f"❌ No se encontró el archivo '{input_path}'", file=sys.stderr)
+        return 1
+    if not vault_path.is_dir():
+        print(f"❌ No existe la carpeta destino '{vault_path}'", file=sys.stderr)
+        return 1
+
+    recurso_dir = vault_path / input_path.stem
+    img_dir = recurso_dir / "imagenes"
+    recurso_dir.mkdir(parents=True, exist_ok=True)
+    img_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"📄 Procesando: {input_path.name}")
+    print(f"📂 Destino: {recurso_dir}")
+    print(f"⚙️  OCR: {'activado' if args.ocr else 'desactivado'}")
+
+    options = PdfPipelineOptions()
+    options.do_ocr = args.ocr
+    options.generate_picture_images = True
+    options.images_scale = 2.0
+
+    converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
+    )
+
+    start = time.time()
+    conv_result = converter.convert(input_path)
+    md_content = conv_result.document.export_to_markdown(image_dir=img_dir)
+
+    titulo = args.title or input_path.stem
+    md_final = generar_frontmatter(titulo, args.tags) + md_content
+
+    md_filepath = recurso_dir / f"{input_path.stem}.md"
+    md_filepath.write_text(md_final, encoding="utf-8")
+
+    elapsed = time.time() - start
+    print(f"✅ Listo en {elapsed:.2f} s")
+    print(f"🔗 {md_filepath}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

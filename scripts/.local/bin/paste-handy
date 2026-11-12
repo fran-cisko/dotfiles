@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Pega el texto de Handy en la ventana activa (Wayland).
+# Requisitos: wl-clipboard (wl-copy) y ydotool.
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+    echo "Uso: paste-handy \"texto a pegar\"" >&2
+    exit 1
+fi
+
+for cmd in wl-copy ydotool; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: falta '$cmd'. En Nobara: sudo dnf install wl-clipboard ydotool" >&2
+        exit 1
+    fi
+done
+
+TEXTO="$1"
+
+# 1. Copiar a Wayland manteniendo UTF-8 (tildes y ñ)
+printf '%s' "$TEXTO" | wl-copy
+
+# 2. Esperar a que la ventana destino recupere el foco
+sleep 0.15
+
+# 3. Ctrl+V con ydotool (29 = Ctrl izquierdo, 47 = V)
+ydotool key 29:1 47:1 47:0 29:0

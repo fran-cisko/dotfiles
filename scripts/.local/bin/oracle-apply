@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Reintenta el apply de un stack de Oracle Resource Manager hasta que haya capacidad.
+#
+# Uso:
+#   oracle-apply <STACK_OCID>
+#   ORACLE_STACK_OCID=ocid1... oracle-apply
+set -euo pipefail
+
+STACK_OCID="${1:-${ORACLE_STACK_OCID:-}}"
+
+if [[ -z "$STACK_OCID" ]]; then
+    echo "Uso: oracle-apply <STACK_OCID>" >&2
+    echo "   o: ORACLE_STACK_OCID=ocid1... oracle-apply" >&2
+    exit 1
+fi
+
+if ! command -v oci >/dev/null 2>&1; then
+    echo "ERROR: falta el CLI de Oracle Cloud ('oci')." >&2
+    exit 1
+fi
+
+echo "Iniciando bucle de reintento para el stack: $STACK_OCID"
+
+while true; do
+    HORA=$(date +"%Y-%m-%d %H:%M:%S")
+    echo "[$HORA] Enviando nuevo intento de Apply..."
+
+    JOB_ID=$(oci resource-manager job create-apply-job \
+        --stack-id "$STACK_OCID" \
+        --execution-plan-strategy "AUTO_APPROVED" \
+        --query "data.id" \
+        --raw-output 2>/dev/null || true)
+
+    if [[ -z "$JOB_ID" || "$JOB_ID" == "null" ]]; then
+        echo "[$HORA] Error al emitir el trabajo. Reintentando en 60 segundos..."
+        sleep 60
+        continue
+    fi
+
+    echo "[$HORA] Trabajo creado ($JOB_ID). Esperando resultado..."
+
+    while true; do
+        STATUS=$(oci resource-manager job get --job-id "$JOB_ID" \
+            --query 'data."lifecycle-state"' --raw-output 2>/dev/null || true)
+
+        case "$STATUS" in
+            SUCCEEDED)
+                echo "[$HORA] ÉXITO: servidor creado correctamente."
+                exit 0
+                ;;
+            FAILED)
+                echo "[$HORA] Sin capacidad. Esperando 90 segundos..."
+                break
+                ;;
+            CANCELED)
+                echo "[$HORA] Trabajo cancelado. Reintentando..."
+                break
+                ;;
+        esac
+        sleep 200
+    done
+
+    sleep 600
+done

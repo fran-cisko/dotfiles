@@ -8,7 +8,9 @@ secrets/
 *.token
 
 # Archivos locales / específicos de máquina
+# `*.local` ignora archivos, pero no directorios como `scripts/.local/`.
 *.local
+!*.local/
 *.local.*
 *.bak
 *.orig

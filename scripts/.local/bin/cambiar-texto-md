@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Reemplaza texto en archivos .md de forma recursiva.
+
+Por defecto simula los cambios. Usa --ejecutar para aplicarlos.
+"""
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+
+def reemplazar_texto(
+    ruta_base: Path,
+    texto_viejo: str,
+    texto_nuevo: str,
+    simulacion: bool = True,
+    preservar_mtime: bool = True,
+) -> int:
+    if not ruta_base.is_dir():
+        print(f"❌ Error: el directorio '{ruta_base}' no existe.", file=sys.stderr)
+        return 2
+
+    print(f"🔍 Escaneando archivos .md en: {ruta_base.resolve()}")
+    if simulacion:
+        print("⚠️  MODO SIMULACIÓN: los archivos NO serán modificados.\n")
+    else:
+        print("🚀 MODO REAL: aplicando cambios.\n")
+
+    modificados = 0
+    errores = 0
+
+    for ruta_archivo in ruta_base.rglob("*.md"):
+        try:
+            original = ruta_archivo.read_text(encoding="utf-8")
+            if texto_viejo not in original:
+                continue
+
+            modificados += 1
+            relativa = ruta_archivo.relative_to(ruta_base)
+
+            if simulacion:
+                print(f"   📄 Se modificaría: {relativa}")
+                continue
+
+            stats = ruta_archivo.stat() if preservar_mtime else None
+            ruta_archivo.write_text(
+                original.replace(texto_viejo, texto_nuevo), encoding="utf-8"
+            )
+            if preservar_mtime and stats:
+                os.utime(ruta_archivo, (stats.st_atime, stats.st_mtime))
+            print(f"   ✅ Modificado: {relativa}")
+
+        except (UnicodeDecodeError, PermissionError) as exc:
+            print(f"   ⚠️  Error en {ruta_archivo.name}: {exc}")
+            errores += 1
+
+    print("\n--- RESUMEN ---")
+    if simulacion:
+        print(f"👉 Se modificarían {modificados} archivos.")
+        print("💡 Añade '--ejecutar' para aplicar los cambios.")
+    else:
+        print(f"✨ {modificados} archivos modificados.")
+
+    if errores:
+        print(f"⚠️  Problemas de lectura/permisos en {errores} archivos.")
+        return 1
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Reemplaza texto de forma masiva en archivos .md.",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument("directorio", help="Carpeta a procesar (ej. '.' para la actual)")
+    parser.add_argument("texto_viejo", help="Texto exacto a buscar")
+    parser.add_argument("texto_nuevo", help="Texto nuevo")
+    parser.add_argument(
+        "--ejecutar",
+        action="store_true",
+        help="Aplica los cambios (sin esto, solo simula)",
+    )
+    parser.add_argument(
+        "--actualizar-fecha",
+        action="store_true",
+        help="Actualiza la fecha de modificación (por defecto se preserva)",
+    )
+
+    args = parser.parse_args()
+    return reemplazar_texto(
+        ruta_base=Path(args.directorio),
+        texto_viejo=args.texto_viejo,
+        texto_nuevo=args.texto_nuevo,
+        simulacion=not args.ejecutar,
+        preservar_mtime=not args.actualizar_fecha,
+    )
+
+
+if __name__ == "__main__":
+    sys.exit(main())
