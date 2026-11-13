@@ -9,7 +9,7 @@ set -euo pipefail
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DOTFILES_DIR"
 
-PACKAGES=(bash git gtk fontconfig autostart systemd vscode scripts)
+PACKAGES=(bash git gtk fontconfig autostart systemd vscode restic scripts)
 DRY_RUN=0
 
 for arg in "$@"; do
@@ -36,7 +36,10 @@ if ! command -v stow >/dev/null 2>&1; then
     exit 1
 fi
 
-mkdir -p "$HOME/.local/bin"
+# .config/restic debe existir antes de stow: así el paquete no "pliega" la
+# carpeta y la contraseña del repositorio (~/.config/restic/vault.pass) queda
+# fuera del repo.
+mkdir -p "$HOME/.local/bin" "$HOME/.config/restic"
 
 STOW_OPTS=()
 if [[ $DRY_RUN -eq 1 ]]; then

@@ -1,0 +1,35 @@
+# Exclusiones del backup de la bóveda (restic --exclude-file).
+# Sintaxis: un patrón por línea; sin "/" coincide con el nombre en cualquier nivel.
+# Lo que se excluye aquí no se puede restaurar: solo cachés y estado regenerable.
+# A diferencia de Syncthing (.stignore), aquí SÍ se incluyen .git y .obsidian.
+
+# ---------- Cachés de plugins y estado volátil ----------
+.smart-env
+.space
+.makemd
+.copilot
+.keep-the-rhythm
+.handwriting
+.smtcmp_json_db
+.agents
+.opencode
+.claudian
+
+# ---------- Basura de Obsidian / Syncthing ----------
+.trash
+.stfolder
+.stversions
+
+# ---------- Dependencias y temporales ----------
+node_modules
+*.crdownload
+*.part
+*.tmp
+~$*
+.DS_Store
+Thumbs.db
+
+# ---------- Estado vivo de Audacity ----------
+# Los .aup3 se guardan; el WAL y el SHM cambian en cada pulsación.
+*.aup3-wal
+*.aup3-shm

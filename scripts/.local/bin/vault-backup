@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# vault-backup — copias de seguridad de la bóveda Obsidian con restic.
+#
+# Shadow Drive (Nextcloud) tarda ~25 s en autenticar cada petición, así que el
+# repositorio se expone con `rclone serve restic` + `--use-cookies`: la primera
+# petición paga la autenticación y el resto reutilizan la cookie de sesión
+# (~0,7 s). Restic habla por HTTP local con 8 conexiones en paralelo.
+#
+# Uso:
+#   vault-backup init              crea el repositorio en el remoto
+#   vault-backup backup            sube un snapshot (acción por defecto)
+#   vault-backup prune             aplica retención y compacta
+#   vault-backup check             verifica integridad (lee una muestra)
+#   vault-backup snapshots         lista los snapshots
+#   vault-backup forget ID [opts]  borra un snapshot (con --prune, sus datos)
+#   vault-backup unlock            libera locks huérfanos (--remove-all)
+#   vault-backup restore DESTINO [SNAPSHOT] [filtros restic]
+#
+# Variables de entorno: VAULT, REMOTE, PORT, PASSFILE, EXCLUDES, CONNECTIONS
+set -euo pipefail
+
+VAULT="${VAULT:-$HOME/Documents/My_Obsidian_Vault}"
+REMOTE="${REMOTE:-shadow:vault-restic}"
+PORT="${PORT:-18734}"
+PASSFILE="${PASSFILE:-$HOME/.config/restic/vault.pass}"
+EXCLUDES="${EXCLUDES:-$HOME/.config/restic/excludes.txt}"
+CONNECTIONS="${CONNECTIONS:-8}"
+SERVER_TIMEOUT="${SERVER_TIMEOUT:-300}"
+HOST_SHORT="$(hostname -s 2>/dev/null || hostname)"
+TAG="vault"
+
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+log() { printf '%s  %s\n' "$(date '+%F %T')" "$*"; }
+
+command -v restic >/dev/null 2>&1 || die "restic no está en PATH"
+command -v rclone >/dev/null 2>&1 || die "rclone no está en PATH"
+[[ -r "$PASSFILE" ]] || die "no puedo leer $PASSFILE (chmod 600)"
+[[ -r "$EXCLUDES" ]] || die "no puedo leer $EXCLUDES"
+
+repo="rest:http://127.0.0.1:${PORT}/"
+RESTIC=(restic -r "$repo" --password-file "$PASSFILE" --retry-lock 15m
+        -o "rest.connections=${CONNECTIONS}")
+
+srv_pid=""
+
+port_open() {
+    (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null
+}
+
+stop_server() {
+    if [[ -n "$srv_pid" ]] && kill -0 "$srv_pid" 2>/dev/null; then
+        kill "$srv_pid" 2>/dev/null || true
+        wait "$srv_pid" 2>/dev/null || true
+    fi
+    srv_pid=""
+}
+
+start_server() {
+    port_open && die "el puerto $PORT ya está en uso (¿otra copia en marcha?)"
+    log "arrancando rclone serve restic sobre $REMOTE"
+    rclone --use-cookies serve restic "$REMOTE" \
+        --addr "127.0.0.1:${PORT}" --log-level ERROR &
+    srv_pid=$!
+    trap stop_server EXIT INT TERM
+    local i
+    for ((i = 0; i < SERVER_TIMEOUT; i++)); do
+        port_open && return 0
+        kill -0 "$srv_pid" 2>/dev/null || die "rclone serve restic terminó al arrancar"
+        sleep 1
+    done
+    die "el servidor no respondió en ${SERVER_TIMEOUT}s"
+}
+
+mode="${1:-backup}"
+shift || true
+extra=("$@")
+
+case "$mode" in
+    init)
+        log "creando carpeta remota $REMOTE"
+        rclone mkdir "$REMOTE"
+        start_server
+        log "creando repositorio"
+        "${RESTIC[@]}" init
+        ;;
+    backup)
+        [[ -d "$VAULT" ]] || die "no existe la bóveda: $VAULT"
+        start_server
+        log "backup $VAULT -> $REMOTE"
+        "${RESTIC[@]}" backup "$VAULT" \
+            --exclude-file "$EXCLUDES" \
+            --exclude-caches \
+            --tag "$TAG" \
+            --host "$HOST_SHORT" \
+            "${extra[@]}"
+        ;;
+    prune)
+        start_server
+        log "aplicando retención en $REMOTE"
+        "${RESTIC[@]}" forget \
+            --tag "$TAG" \
+            --keep-daily 7 --keep-weekly 5 --keep-monthly 12 --keep-yearly 3 \
+            --prune
+        ;;
+    check)
+        start_server
+        log "verificando integridad (5% de los datos)"
+        "${RESTIC[@]}" check --read-data-subset=5%
+        ;;
+    forget)
+        [[ ${#extra[@]} -gt 0 ]] || die "uso: vault-backup forget ID|--tag X [opciones de forget]"
+        start_server
+        log "eliminando snapshots"
+        "${RESTIC[@]}" forget "${extra[@]}"
+        ;;
+    unlock)
+        start_server
+        log "liberando bloqueos"
+        "${RESTIC[@]}" unlock "${extra[@]}"
+        ;;
+    snapshots)
+        start_server
+        "${RESTIC[@]}" snapshots
+        ;;
+    restore)
+        dest="${1:-}"
+        snap="${2:-latest}"
+        [[ -n "$dest" ]] || die "uso: vault-backup restore DESTINO [SNAPSHOT] [filtros restic]"
+        filtros=("${@:3}")
+        mkdir -p "$dest"
+        start_server
+        log "restaurando $snap en $dest"
+        "${RESTIC[@]}" restore "$snap" --target "$dest" --verify "${filtros[@]}"
+        ;;
+    -h|--help|help)
+        sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        die "acción desconocida: $mode (usa --help)"
+        ;;
+esac

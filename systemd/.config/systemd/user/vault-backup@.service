@@ -1,0 +1,13 @@
+[Unit]
+Description=Backup de la bóveda Obsidian con restic (%i)
+Documentation=https://restic.readthedocs.io
+StartLimitIntervalSec=3600
+StartLimitBurst=4
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/vault-backup %i
+Nice=10
+IOSchedulingClass=idle
+Restart=on-failure
+RestartSec=15min

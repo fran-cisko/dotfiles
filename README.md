@@ -13,6 +13,7 @@ Configuración personal de la máquina, versionada con git y enlazada con GNU St
 | `autostart` | `~/.config/autostart/` | Apps al iniciar sesión |
 | `systemd` | `~/.config/systemd/user/` | Servicios de usuario |
 | `vscode` | `~/.config/Code/User/settings.json` | Ajustes del editor |
+| `restic` | `~/.config/restic/excludes.txt` | Exclusiones del backup (la contraseña va aparte) |
 | `scripts` | `~/.local/bin/` | Utilidades de terminal |
 
 `bootstrap/` no se enlaza: son scripts de instalación de un solo uso.
@@ -35,9 +36,41 @@ sudo dnf install stow        # Nobara/Fedora
 | `anki-update` | Actualiza Anki en `~/.local` sin sudo, verificando SHA256 |
 | `cambiar-texto-md` | Reemplaza texto en archivos `.md` (simula por defecto) |
 | `libro-a-md` | Convierte un PDF a Markdown para Obsidian (Docling) |
-| `obsidian-sync` | Abre Obsidian y sincroniza la bóveda con rclone al cerrar |
 | `paste-handy` | Pega texto en Wayland con `wl-copy` + `ydotool` |
 | `oracle-apply` | Reintenta el apply de un stack de Oracle hasta tener capacidad |
+| `vault-backup` | Backup con restic de la bóveda a Shadow Drive (`init`, `backup`, `prune`, `check`, `restore`) |
+
+## Backup de la bóveda
+
+`vault-backup` usa **restic** sobre el remote `shadow:` de rclone (Shadow Drive),
+con snapshots incrementales, deduplicación y cifrado en cliente.
+
+Shadow Drive autentica cada petición en ~25 s, así que el script levanta
+`rclone --use-cookies serve restic` en un puerto local y restic habla por HTTP
+con 8 conexiones: la primera petición paga la autenticación y el resto
+reutilizan la cookie de sesión (~0,7 s). Backup completo: 12 min 40 s.
+Incremental: ~40 s.
+
+```bash
+vault-backup init                                  # una sola vez
+vault-backup backup                                # snapshot manual
+vault-backup snapshots                             # ver qué hay
+vault-backup restore /tmp/restaurado latest        # recuperar
+vault-backup restore /tmp/x latest --include '/home/cisco/Documents/My_Obsidian_Vault/350_Automatizations/docs'
+vault-backup check                                 # verificar integridad
+vault-backup forget <id> --prune                   # borrar un snapshot y sus datos
+vault-backup unlock --remove-all                   # limpiar locks huérfanos
+```
+
+Automatizado con tres timers de usuario: backup diario (03:15), retención
+semanal (`forget --prune`) y verificación mensual.
+
+| Archivo | Dónde | Se versiona |
+|---|---|---|
+| `excludes.txt` | `~/.config/restic/` | sí |
+| `vault.pass` | `~/.config/restic/` | **no** (copia en tu gestor de contraseñas) |
+
+Si pierdes `vault.pass`, el backup es irrecuperable.
 
 ## Plantillas
 
