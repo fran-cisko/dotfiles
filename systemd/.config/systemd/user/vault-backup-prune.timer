@@ -2,7 +2,7 @@
 Description=Retención y compactación del backup (restic forget + prune)
 
 [Timer]
-OnCalendar=Sun 05:00:00
+OnCalendar=Sun 21:00:00
 Persistent=true
 Unit=vault-backup@prune.service
 

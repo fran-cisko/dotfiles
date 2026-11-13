@@ -62,8 +62,10 @@ vault-backup forget <id> --prune                   # borrar un snapshot y sus da
 vault-backup unlock --remove-all                   # limpiar locks huérfanos
 ```
 
-Automatizado con tres timers de usuario: backup diario (03:15), retención
-semanal (`forget --prune`) y verificación mensual.
+Automatizado con tres timers de usuario, en la franja en que la PC está encendida:
+backup diario (20:00), retención semanal (`forget --prune`, domingos 21:00) y
+verificación mensual (día 1, 21:30). Con `Persistent=true`, si la PC estaba
+apagada a esa hora la ejecución se recupera en el siguiente arranque.
 
 | Archivo | Dónde | Se versiona |
 |---|---|---|

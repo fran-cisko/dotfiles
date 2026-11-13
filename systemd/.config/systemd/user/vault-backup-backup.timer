@@ -2,7 +2,7 @@
 Description=Backup diario de la bóveda Obsidian
 
 [Timer]
-OnCalendar=*-*-* 03:15:00
+OnCalendar=*-*-* 20:00:00
 Persistent=true
 RandomizedDelaySec=10min
 Unit=vault-backup@backup.service
