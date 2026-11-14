@@ -29,30 +29,43 @@ JOBS = [
         "icon": "🗄️",
         "timer": "vault-backup-backup.timer",
         "service": "vault-backup@backup.service",
+        "manual": "Solo restore",
     },
     {
         "name": "Limpieza restic (prune)",
         "icon": "🧹",
         "timer": "vault-backup-prune.timer",
         "service": "vault-backup@prune.service",
+        "manual": "—",
     },
     {
         "name": "Verificación restic (check)",
         "icon": "🔍",
         "timer": "vault-backup-check.timer",
         "service": "vault-backup@check.service",
+        "manual": "—",
     },
     {
         "name": "Syncthing",
         "icon": "🔄",
         "service": "syncthing.service",
         "kind": "daemon",
+        "manual": "Conflictos",
     },
     {
         "name": "mdbase connect",
         "icon": "🔌",
         "service": "mdbase-connect.service",
         "kind": "daemon",
+        "manual": "—",
+    },
+    {
+        "name": "Commit de dotfiles",
+        "icon": "📦",
+        "timer": "dotfiles-commit.timer",
+        "service": "dotfiles-commit.service",
+        "manual": "Sí: push",
+        "manual_check": "dotfiles_push",
     },
 ]
 
@@ -109,6 +122,23 @@ def show(unit: str) -> dict[str, str]:
             key, value = line.split("=", 1)
             props[key] = value
     return props
+
+
+def unpushed(repo: Path) -> int | None:
+    """Commits locales que no están en la rama remota de seguimiento."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "rev-list", "--count", "@{u}..HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if out.returncode == 0:
+            return int(out.stdout.strip())
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    return None
 
 
 def timer_map() -> dict[str, dict]:
@@ -200,7 +230,9 @@ def evaluate(job: dict, timers: dict[str, dict], now: datetime) -> tuple[str, st
         return "❌ No instalado", "—", "—"
 
     info = timers.get(timer_unit, {})
-    last = pos(info.get("last"), 1_000_000)
+    last = pos(info.get("last"), 1_000_000) or pos(
+        svc.get("ExecMainExitTimestamp")
+    )
     nxt = pos(info.get("next"), 1_000_000)
     result, code = svc.get("Result"), svc.get("ExecMainStatus", "")
     active, sub = svc.get("ActiveState"), svc.get("SubState")
@@ -225,7 +257,18 @@ def main() -> int:
     rows = []
     for job in JOBS:
         health, last, nxt = evaluate(job, timers, now)
-        rows.append(f"| {job['icon']} {job['name']} | {health} | {last} | {nxt} |")
+        manual = job.get("manual", "—")
+        if job.get("manual_check") == "dotfiles_push":
+            n = unpushed(Path.home() / "dotfiles")
+            if n is None:
+                manual = "Sí: revisar push"
+            elif n == 0:
+                manual = "No: todo publicado"
+            else:
+                manual = f"Sí: {n} commit{'s' if n != 1 else ''} sin push"
+        rows.append(
+            f"| {job['icon']} {job['name']} | {health} | {last} | {nxt} | {manual} |"
+        )
 
     panel_next = pos(timers.get("vault-status.timer", {}).get("next"), 1_000_000)
     next_txt = fmt(panel_next, now, relative=True) if panel_next else "—"
@@ -245,11 +288,15 @@ generated: {now.isoformat(timespec="seconds")}
 > [!info] Panel de automatizaciones
 > **Actualizado:** {updated} · **Próxima actualización:** {next_txt}
 
-| Automatización | Estado | Última ejecución / desde | Próxima |
-|---|---|---|---|
+| Automatización | Estado | Última ejecución / desde | Próxima | Intervención manual |
+|---|---|---|---|---|
 {chr(10).join(rows)}
 
 **Leyenda:** ✅ última ejecución correcta · ⚠️ falló · ▶️ en ejecución · 🕒 sin ejecuciones · ⏸️ inactivo · ❌ no instalado.
+
+**Intervención manual:** `Solo restore` = la contraseña de restic solo hace falta para restaurar · `Conflictos` = resolverlos si Syncthing los marca · `push` = publicar los commits de dotfiles en GitHub.
+
+**Commit de la bóveda:** manual, sin remoto; no lo programa el panel.
 
 **Si algo falla:** `journalctl --user -u <unidad> -n 50 --no-pager`
 
