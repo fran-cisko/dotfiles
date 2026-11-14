@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# dotfiles-commit — commit automático del repo ~/dotfiles.
+#
+# Uso:
+#   dotfiles-commit                 commit si hay cambios
+#   dotfiles-commit --push          además hace push a origin
+#   dotfiles-commit "mensaje"       usa un mensaje propio
+#
+# Pensado para un timer diario: si el árbol está limpio, no hace nada.
+set -euo pipefail
+
+REPO="${DOTFILES:-$HOME/dotfiles}"
+cd "$REPO" || { echo "ERROR: no existe $REPO" >&2; exit 1; }
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+    echo "ERROR: $REPO no es un repositorio git" >&2
+    exit 1
+}
+
+push=0
+if [[ "${1:-}" == "--push" ]]; then
+    push=1
+    shift
+fi
+
+if [[ -z "$(git status --porcelain)" ]]; then
+    echo "Sin cambios en $REPO."
+    exit 0
+fi
+
+git add -A
+
+if git diff --cached --quiet; then
+    echo "Sin cambios que commitear."
+    exit 0
+fi
+
+# Seguridad: no versionar credenciales evidentes en un repo público.
+mapfile -t suspicious < <(
+    git diff --cached --name-only |
+        grep -Ei '(^|/)(\.env($|\.)|[^/]*\.(key|pem|token|pass)|[^/]*secret[^/]*|id_rsa|id_ed25519|rclone\.conf)$' || true
+)
+if (( ${#suspicious[@]} > 0 )); then
+    printf 'ERROR: posibles secretos en el commit:\n' >&2
+    printf '  %s\n' "${suspicious[@]}" >&2
+    for f in "${suspicious[@]}"; do
+        git restore --staged -- "$f" 2>/dev/null || true
+    done
+    exit 1
+fi
+
+if [[ $# -gt 0 ]]; then
+    msg="$*"
+else
+    msg="chore: cambios automáticos $(date '+%Y-%m-%d %H:%M')"
+fi
+
+areas=$(git diff --cached --name-only |
+    awk -F/ '{print $1}' |
+    sort -u |
+    tr '\n' ',' |
+    sed 's/,$//; s/,/, /g')
+
+git commit -m "$msg" -m "Áreas: ${areas:-varias}"
+
+if (( push )); then
+    git push origin HEAD
+fi

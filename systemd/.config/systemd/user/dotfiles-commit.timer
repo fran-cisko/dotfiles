@@ -1,0 +1,11 @@
+[Unit]
+Description=Commit diario de los dotfiles
+
+[Timer]
+OnCalendar=*-*-* 22:00:00
+Persistent=true
+RandomizedDelaySec=5min
+Unit=dotfiles-commit.service
+
+[Install]
+WantedBy=timers.target

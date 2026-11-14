@@ -1,0 +1,12 @@
+[Unit]
+Description=Actualiza el panel de estado de las automatizaciones cada 15 minutos
+
+[Timer]
+OnCalendar=*:0/15
+OnBootSec=2min
+AccuracySec=30s
+Persistent=false
+Unit=vault-status.service
+
+[Install]
+WantedBy=timers.target

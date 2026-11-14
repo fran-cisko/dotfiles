@@ -1,0 +1,11 @@
+[Unit]
+Description=Genera el panel de estado de las automatizaciones de la bóveda
+Documentation=file://%h/dotfiles/scripts/.local/bin/vault-status
+ConditionPathIsDirectory=%h/Documents/My_Obsidian_Vault
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/vault-status
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30

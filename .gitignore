@@ -22,6 +22,8 @@ secrets/
 *~
 .DS_Store
 .cache/
+__pycache__/
+*.pyc
 
 # Estado de apps (no versionar)
 *.db

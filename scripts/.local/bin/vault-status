@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""vault-status — escribe el panel de estado de las automatizaciones en la bóveda.
+
+Lee systemd (ámbito de usuario) y genera una nota Markdown que el diario embebe.
+No necesita plugins: el móvil solo lee el Markdown que sincroniza Syncthing.
+
+Uso:
+    vault-status
+
+Variable de entorno:
+    VAULT   ruta de la bóveda (por defecto ~/Documents/My_Obsidian_Vault)
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+VAULT = Path(os.environ.get("VAULT", str(Path.home() / "Documents/My_Obsidian_Vault")))
+OUT = VAULT / "350_Automatizations" / "estado" / "Estado de automatizaciones.md"
+
+# Un trabajo con "timer" es programado; sin "timer" es un daemon permanente.
+JOBS = [
+    {
+        "name": "Backup de la bóveda",
+        "icon": "🗄️",
+        "timer": "vault-backup-backup.timer",
+        "service": "vault-backup@backup.service",
+    },
+    {
+        "name": "Limpieza restic (prune)",
+        "icon": "🧹",
+        "timer": "vault-backup-prune.timer",
+        "service": "vault-backup@prune.service",
+    },
+    {
+        "name": "Verificación restic (check)",
+        "icon": "🔍",
+        "timer": "vault-backup-check.timer",
+        "service": "vault-backup@check.service",
+    },
+    {
+        "name": "Syncthing",
+        "icon": "🔄",
+        "service": "syncthing.service",
+        "kind": "daemon",
+    },
+    {
+        "name": "mdbase connect",
+        "icon": "🔌",
+        "service": "mdbase-connect.service",
+        "kind": "daemon",
+    },
+]
+
+DIAS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+DIAS_EN = {
+    "Mon": "lun",
+    "Tue": "mar",
+    "Wed": "mié",
+    "Thu": "jue",
+    "Fri": "vie",
+    "Sat": "sáb",
+    "Sun": "dom",
+}
+
+
+def run(args: list[str]) -> str:
+    try:
+        return subprocess.run(
+            args, capture_output=True, text=True, timeout=15, check=False
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def show(unit: str) -> dict[str, str]:
+    out = run(
+        [
+            "systemctl",
+            "--user",
+            "show",
+            "--timestamp=unix",
+            unit,
+            "-p",
+            "LoadState",
+            "-p",
+            "ActiveState",
+            "-p",
+            "SubState",
+            "-p",
+            "Result",
+            "-p",
+            "ExecMainStatus",
+            "-p",
+            "ExecMainExitTimestamp",
+            "-p",
+            "ExecMainStartTimestamp",
+            "-p",
+            "ActiveEnterTimestamp",
+        ]
+    )
+    props: dict[str, str] = {}
+    for line in out.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            props[key] = value
+    return props
+
+
+def timer_map() -> dict[str, dict]:
+    out = run(
+        [
+            "systemctl",
+            "--user",
+            "list-timers",
+            "--all",
+            "--output=json",
+            "--no-pager",
+        ]
+    )
+    start, end = out.find("["), out.rfind("]")
+    if start < 0 or end < start:
+        return {}
+    try:
+        data = json.loads(out[start : end + 1])
+    except json.JSONDecodeError:
+        return {}
+    return {item.get("unit", ""): item for item in data}
+
+
+def epoch(value, scale: float = 1.0) -> float | None:
+    if not value or str(value) in ("n/a", "-"):
+        return None
+    raw = str(value).strip().lstrip("@")
+    try:
+        return float(raw) / scale
+    except ValueError:
+        return None
+
+
+def pos(value, scale: float = 1.0) -> float | None:
+    ts = epoch(value, scale)
+    return ts if ts and ts > 0 else None
+
+
+def fmt(ts: float | None, now: datetime, relative: bool = False) -> str:
+    if ts is None:
+        return "—"
+    dt = datetime.fromtimestamp(ts).astimezone()
+    delta_days = (dt.date() - now.date()).days
+    if delta_days == 0:
+        base = f"hoy {dt:%H:%M}"
+    elif delta_days == -1:
+        base = f"ayer {dt:%H:%M}"
+    elif delta_days == 1:
+        base = f"mañana {dt:%H:%M}"
+    else:
+        base = f"{DIAS[dt.weekday()]} {dt.day:02d}/{dt.month:02d} {dt:%H:%M}"
+    if relative:
+        secs = (dt - now).total_seconds()
+        if 0 < secs < 86400:
+            mins = int(secs // 60)
+            if mins < 60:
+                base += f" (en {mins} min)"
+            else:
+                base += f" (en {mins // 60} h {mins % 60} min)"
+        elif secs >= 86400:
+            base += f" (en {int(secs // 86400)} d)"
+    return base
+
+
+def evaluate(job: dict, timers: dict[str, dict], now: datetime) -> tuple[str, str, str]:
+    svc = show(job["service"])
+    if svc.get("LoadState") == "not-found":
+        return "❌ No instalado", "—", "—"
+    if not svc:
+        return "⚠️ Sin datos de systemd", "—", "—"
+
+    if job.get("kind") == "daemon":
+        active, sub = svc.get("ActiveState"), svc.get("SubState")
+        result, code = svc.get("Result"), svc.get("ExecMainStatus", "")
+        if active == "active" and sub == "running":
+            since = pos(
+                svc.get("ActiveEnterTimestamp") or svc.get("ExecMainStartTimestamp")
+            )
+            return "✅ Activo", f"en marcha desde {fmt(since, now)}", "— (permanente)"
+        if active == "activating":
+            return "🕒 Arrancando", "—", "—"
+        if result == "failed" or code not in ("", "0"):
+            return f"⚠️ Falló (código {code or '?'})", "—", "—"
+        return "⏸️ Inactivo", "—", "—"
+
+    timer_unit = job["timer"]
+    tprops = show(timer_unit)
+    if tprops.get("LoadState") == "not-found":
+        return "❌ No instalado", "—", "—"
+
+    info = timers.get(timer_unit, {})
+    last = pos(info.get("last"), 1_000_000)
+    nxt = pos(info.get("next"), 1_000_000)
+    result, code = svc.get("Result"), svc.get("ExecMainStatus", "")
+    active, sub = svc.get("ActiveState"), svc.get("SubState")
+    last_txt = fmt(last, now)
+    next_txt = fmt(nxt, now, relative=True)
+
+    if tprops.get("ActiveState") != "active":
+        return "⏸️ Timer inactivo", last_txt, "—"
+    if active == "active" and sub == "running":
+        return "▶️ Ejecutando", last_txt, next_txt
+    if result == "failed" or code not in ("", "0"):
+        return f"⚠️ Falló (código {code or '?'})", last_txt, next_txt
+    if last is None:
+        return "🕒 Sin ejecuciones", "—", next_txt
+    return "✅ OK", last_txt, next_txt
+
+
+def main() -> int:
+    now = datetime.now().astimezone()
+    timers = timer_map()
+
+    rows = []
+    for job in JOBS:
+        health, last, nxt = evaluate(job, timers, now)
+        rows.append(f"| {job['icon']} {job['name']} | {health} | {last} | {nxt} |")
+
+    panel_next = pos(timers.get("vault-status.timer", {}).get("next"), 1_000_000)
+    next_txt = fmt(panel_next, now, relative=True) if panel_next else "—"
+    updated = now.strftime("%a %d/%m, %H:%M")
+    day_en, rest = updated.split(" ", 1)
+    updated = f"{DIAS_EN.get(day_en, day_en)} {rest}"
+
+    content = f"""---
+title: Estado de automatizaciones
+type: note
+tags:
+  - automations
+  - status
+generated: {now.isoformat(timespec="seconds")}
+---
+
+> [!info] Panel de automatizaciones
+> **Actualizado:** {updated} · **Próxima actualización:** {next_txt}
+
+| Automatización | Estado | Última ejecución / desde | Próxima |
+|---|---|---|---|
+{chr(10).join(rows)}
+
+**Leyenda:** ✅ última ejecución correcta · ⚠️ falló · ▶️ en ejecución · 🕒 sin ejecuciones · ⏸️ inactivo · ❌ no instalado.
+
+**Si algo falla:** `journalctl --user -u <unidad> -n 50 --no-pager`
+
+<!-- Generado por vault-status. No editar a mano. -->
+"""
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    tmp = OUT.with_suffix(".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(OUT)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
